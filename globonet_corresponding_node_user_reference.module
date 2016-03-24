@@ -1,0 +1,416 @@
+<?php
+/**
+ * @file
+ *
+ * This module handel's corresponding references between nodes and users. It's
+ * a specific implementations on a use-case which handel's references between
+ * a download node and users.
+ *
+ * If a download is assigned to a user, the download automatically will be
+ * assigned to the user. For that, we need a node_reference field in both
+ * entities. In this particularly use-case the field in the download node is
+ * named 'field_accessable_downloads' and the field inside the user entity is
+ * named 'field_users'. The download node type id named 'representatives_d_z'.
+ *
+ * It's possible to adapt this module to another use-case. Just search in this
+ * document for the field and node type names and change it. It also would be
+ * nice to have a UI for it (like cnr module) ;).
+ */
+
+/**
+ * Implements hook_node_insert().
+ * @param $node
+ */
+function globonet_corresponding_node_user_reference_node_insert($node) {
+  if($node->type != 'representatives_d_z') return;
+
+  globonet_corresponding_node_user_reference_handle_download($node);
+}
+
+/**
+ * Implements hook_node_update().
+ * @param $node
+ */
+function globonet_corresponding_node_user_reference_node_update($node) {
+  if($node->type != 'representatives_d_z') return;
+
+  globonet_corresponding_node_user_reference_handle_download($node);
+}
+
+/**
+ * Implements hook_node_delete().
+ * @param $node
+ */
+function globonet_corresponding_node_user_reference_node_delete($node) {
+  if($node->type != 'representatives_d_z') return;
+
+  globonet_corresponding_node_user_reference_process_download_delete($node);
+}
+
+/**
+ * Implements hook_user_insert().
+ * @param $edit
+ * @param $account
+ * @param $category
+ */
+function globonet_corresponding_node_user_reference_user_insert(&$edit, $account, $category) {
+  globonet_corresponding_node_user_reference_handle_user((object) $edit);
+}
+
+/**
+ * Implements hook_user_update().
+ * @param $edit
+ * @param $account
+ * @param $category
+ */
+function globonet_corresponding_node_user_reference_user_update(&$edit, $account, $category) {
+  globonet_corresponding_node_user_reference_handle_user((object) $edit);
+}
+
+/**
+ * Implements hook_user_delete().
+ * @param $user
+ */
+function globonet_corresponding_node_user_reference_user_delete($user) {
+  globonet_corresponding_node_user_reference_process_user_delete($user);
+}
+
+/**
+ * This function represents the general logic which will be triggered in
+ * different drupal hooks.
+ *
+ * @param $node
+ */
+function globonet_corresponding_node_user_reference_handle_download($node) {
+  // We only want to go through our logic, if we update a download. But if we
+  // update a user, we also have to save download nodes, which will come into
+  // this hook. So there would be an endless loop.
+  //
+  // To prevent this, we check from which url-path the request comes from.
+  if(strpos($_GET['q'], 'user/') === false) {
+
+    // As we call HOOK_node_update(), the node is already saved. We need to
+    // update the node and save it again. This will call again all
+    // HOOK_node_update() implementations. So we need to prevent this endless
+    // loop.
+    if(!$GLOBALS['node_saved']) {
+      $GLOBALS['node_saved'] = true;
+      globonet_corresponding_node_user_reference_process_download_update($node);
+    }
+  }
+}
+
+/**
+ * This function represents the general logic which will be triggered in
+ * different drupal hooks.
+ *
+ * @param $user
+ */
+function globonet_corresponding_node_user_reference_handle_user($user) {
+  // We only want so go through our logic, if we update a user. But if we
+  // update a download, we also have to save users, which will come into
+  // this hook. So there would be an endless loop.
+  //
+  // To prevent this, we check from which url-path the request comes from.
+  if(strpos($_GET['q'], 'node/') === false) {
+
+    // As we call HOOK_user_update(), the user is already saved. We need to
+    // update the user and save it again. This will call again all
+    // HOOK_user_update() implementations. So we need to prevent this endless
+    // loop.
+    if(!$GLOBALS['user_saved']) {
+      $GLOBALS['user_saved'] = true;
+      globonet_corresponding_node_user_reference_process_user_update($user);
+    }
+  }
+}
+
+/**
+ * This function handels the update logic for a download node.
+ *
+ * @param $node
+ */
+function globonet_corresponding_node_user_reference_process_download_update($node) {
+  /** @var EntityMetadataWrapper $download */
+  if(isset($node->original)) {
+    $existing_download = entity_metadata_wrapper('node', $node->original);
+  } else {
+    $existing_download = entity_metadata_wrapper('node', $node);
+  }
+  $download = entity_metadata_wrapper('node', $node);
+  $uids = _get_all_user_id();
+
+  // Logik:
+  // ======
+  // Alle Benutzer durchgehen ($user):
+  //    Wenn: field_accessable_downloads des Benutzers ($user) diesen Download ($node) beinhaltet:
+  //        Wenn Nicht: Dieser Download ($node) den Benutzer ($user) beinhaltet
+  //              Benutzer ($user) updaten und Referenz zu diesem Download ($node) entfernen
+  //    Sonst:
+  //        Wenn: Dieser Download ($node) diesen Benutzer ($user) beinhaltet
+  //              Benutzer ($user) updaten diesen Download ($node) referenzieren
+  // ======
+  foreach($uids as $uid) {
+    /** @var EntityMetadataWrapper $user */
+    $user = entity_metadata_wrapper('user', $uid);
+
+    if(_user_contains_download($user, $download)) {
+      if(!_download_contains_user($download, $user)) {
+        _remove_download_from_user($existing_download, $user);
+        $user->save();
+      }
+    } elseif(_download_contains_user($download, $user)) {
+      _add_download_to_user($existing_download, $user);
+      $user->save();
+    }
+  }
+}
+
+/**
+ * This function handels the delete logic for a download node.
+ *
+ * @param $node
+ */
+function globonet_corresponding_node_user_reference_process_download_delete($node) {
+  /** @var EntityMetadataWrapper $download */
+  $download = entity_metadata_wrapper('node', $node);
+
+  $uids = _get_all_user_id();
+
+  foreach($uids as $uid) {
+    /** @var EntityMetadataWrapper $user */
+    $user = entity_metadata_wrapper('user', $uid);
+
+    if(_user_contains_download($user, $download)) {
+      _remove_download_from_user($download, $user);
+      $user->save();
+    }
+  }
+}
+
+/**
+ * This function handels the update logic for a user.
+ *
+ * @param $user_entity
+ */
+function globonet_corresponding_node_user_reference_process_user_update($user_entity) {
+  /** @var EntityMetadataWrapper $user */
+  if(isset($user_entity->original)) {
+    $existing_user = entity_metadata_wrapper('user', $user_entity->original);
+  } else {
+    $existing_user = entity_metadata_wrapper('user', $user_entity);
+  }
+  $updated_user = entity_metadata_wrapper('user', $user_entity);
+  $nids = _get_all_download_nids();
+
+  // Logik:
+  // ======
+  // Alle Downloads durchgehen ($download):
+  //    Wenn: field_user des Downloads ($download) diesen User ($user) beinhaltet:
+  //        Wenn Nicht: Dieser User ($user) den Download ($download) beinhaltet
+  //              Download ($download) updaten und Referenz zu diesem User ($user) entfernen
+  //    Sonst:
+  //        Wenn: Dieser User ($user) diesen Download ($download) beinhaltet
+  //              Download ($download) updaten diesen Benutzer ($user) referenzieren
+  // ======
+  foreach($nids as $nid) {
+    /** @var EntityMetadataWrapper $user */
+    $download = entity_metadata_wrapper('node', $nid);
+
+    if(_download_contains_user($download, $existing_user)) {
+      if(!_user_contains_download($updated_user, $download)) {
+        _remove_user_from_download($existing_user, $download);
+        $download->save();
+      }
+    } elseif(_user_contains_download($updated_user, $download)) {
+      _add_user_to_download($existing_user, $download);
+      $download->save();
+    }
+  }
+}
+
+/**
+ * This function handels the delete logic for a user.
+ *
+ * @param $user_entity
+ */
+function globonet_corresponding_node_user_reference_process_user_delete($user_entity) {
+  /** @var EntityMetadataWrapper $user */
+  $user = entity_metadata_wrapper('node', $user_entity->original);
+  $nids = _get_all_download_nids();
+
+  foreach($nids as $nid) {
+    /** @var EntityMetadataWrapper $user */
+    $download = entity_metadata_wrapper('node', $nid);
+
+    if(_download_contains_user($download, $user)) {
+      _remove_user_from_download($user, $download);
+      $download->save();
+    }
+  }
+}
+
+/**
+ * This functions adds a download-reference to an user.
+ *
+ * @param \EntityMetadataWrapper $download
+ * @param \EntityMetadataWrapper $user
+ */
+function _add_download_to_user(EntityMetadataWrapper $download, EntityMetadataWrapper $user) {
+  $user->field_accessable_downloads[] = $download->nid->value();
+}
+
+/**
+ * This functions adds a download-reference to an user.
+ *
+ * @param \EntityMetadataWrapper $user
+ * @param \EntityMetadataWrapper $download
+ */
+function _add_user_to_download(EntityMetadataWrapper $user, EntityMetadataWrapper $download) {
+  $download->field_users[] = $user->uid->value();
+}
+
+/**
+ * This functions removes a download-reference from an user.
+ *
+ * @param \EntityMetadataWrapper $download
+ * @param \EntityMetadataWrapper $user
+ */
+function _remove_download_from_user(EntityMetadataWrapper $download, EntityMetadataWrapper $user) {
+  $user_downloads = $user->field_accessable_downloads->value();
+  if(!$user_downloads) {
+    $user_downloads = array();
+  }
+
+  foreach($user_downloads as $delta => $user_download) {
+    if($user_download->nid == $download->nid->value()) {
+      unset($user_downloads[$delta]);
+      break;
+    }
+  }
+
+  $user->field_accessable_downloads->set($user_downloads);
+}
+
+/**
+ * This function removes a download-reference from an user.
+ *
+ * @param \EntityMetadataWrapper $user
+ * @param \EntityMetadataWrapper $download
+ */
+function _remove_user_from_download(EntityMetadataWrapper $user, EntityMetadataWrapper $download) {
+  $download_users = $download->field_users->value();
+  if(!$download_users) {
+    $download_users = array();
+  }
+
+  foreach($download_users as $delta => $download_user) {
+    if($download_user->uid == $user->uid->value()) {
+      unset($download_users[$delta]);
+      break;
+    }
+  }
+
+  $download->field_users->set($download_users);
+}
+
+/**
+ * This function checks if the given user is referencing to the given download.
+ *
+ * @param \EntityMetadataWrapper $user
+ * @param \EntityMetadataWrapper $download
+ * @return boolean
+ */
+function _user_contains_download(EntityMetadataWrapper $user, EntityMetadataWrapper $download) {
+  if(isset($user->field_accessable_downloads) && isset($user->uid)) {
+    $user_downloads = $user->field_accessable_downloads->value();
+    if(!$user_downloads) {
+      $user_downloads = array();
+    }
+
+    foreach($user_downloads as $delta => $user_download) {
+      if($user_download->nid == $download->nid->value()) {
+        return TRUE;
+      }
+    }
+  }
+
+  return FALSE;
+}
+
+/**
+ * This function checks if the given download is referencing to the given user.
+ *
+ * @param \EntityMetadataWrapper $download
+ * @param \EntityMetadataWrapper $user
+ * @return boolean
+ */
+function _download_contains_user(EntityMetadataWrapper $download, EntityMetadataWrapper $user) {
+  if(isset($download->field_users) && isset($user->uid)) {
+    $download_users = $download->field_users->value();
+    if (!$download_users) {
+      $download_users = array();
+    }
+
+    foreach ($download_users as $delta => $download_user) {
+      if ($download_user->uid == $user->uid->value()) {
+        return TRUE;
+      }
+    }
+  }
+
+  return FALSE;
+}
+
+/**
+ * This function returns every user's id.
+ *
+ * @return array
+ */
+function _get_all_user_id() {
+  $static_data = &drupal_static(__FUNCTION__);
+
+  if(!isset($static_data)) {
+    $uids = array();
+
+    $query = new EntityFieldQuery;
+    $query
+      ->entityCondition('entity_type', 'user');
+
+    $result = $query->execute();
+    foreach($result['user'] as $user) {
+      $uids[] = $user->uid;
+    }
+
+    $static_data = $uids;
+  }
+
+  return $static_data;
+}
+
+/**
+ * This function returns every download's node id.
+ *
+ * @return array
+ */
+function _get_all_download_nids() {
+  $static_data = &drupal_static(__FUNCTION__);
+
+  if(!isset($static_data)) {
+    $nids = array();
+
+    $query = new EntityFieldQuery;
+    $query
+      ->entityCondition('entity_type', 'node')
+      ->entityCondition('bundle', 'representatives_d_z');
+
+    $result = $query->execute();
+    foreach($result['node'] as $node) {
+      $nids[] = $node->nid;
+    }
+
+    $static_data = $nids;
+  }
+
+  return $static_data;
+}

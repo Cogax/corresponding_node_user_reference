@@ -1,0 +1,4 @@
+name = "Corresponding node user references"
+description = "Implementation for specific fields from GLOBONET GmbH"
+core = 7.x
+

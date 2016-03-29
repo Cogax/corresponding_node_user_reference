@@ -2,14 +2,15 @@
 /**
  * @file
  *
- * This module handel's corresponding references between nodes and users. It's
- * a specific implementations on a use-case which handel's references between
+ * This module handles corresponding references between nodes and users. It's
+ * a specific implementation on a use-case which handles references between
  * a download node and users.
  *
  * If a download is assigned to a user, the download automatically will be
- * assigned to the user. For that, we need a node_reference field in both
- * entities. In this particularly use-case the field in the download node is
- * named 'field_accessable_downloads' and the field inside the user entity is
+ * assigned to the user. For that, we need a node_reference field the user
+ * entity and a user_reference field in the node type entity. In this 
+ * particularly use-case the field in the download node is named 
+ * 'field_accessable_downloads' and the field inside the user entity is
  * named 'field_users'. The download node type id named 'representatives_d_z'.
  *
  * It's possible to adapt this module to another use-case. Just search in this

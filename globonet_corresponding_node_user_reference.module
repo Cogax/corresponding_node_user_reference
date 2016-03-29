@@ -127,7 +127,7 @@ function globonet_corresponding_node_user_reference_handle_user($user) {
 }
 
 /**
- * This function handels the update logic for a download node.
+ * This function handles the update logic for a download node.
  *
  * @param $node
  */
@@ -168,7 +168,7 @@ function globonet_corresponding_node_user_reference_process_download_update($nod
 }
 
 /**
- * This function handels the delete logic for a download node.
+ * This function handles the delete logic for a download node.
  *
  * @param $node
  */
@@ -190,7 +190,7 @@ function globonet_corresponding_node_user_reference_process_download_delete($nod
 }
 
 /**
- * This function handels the update logic for a user.
+ * This function handles the update logic for a user.
  *
  * @param $user_entity
  */
@@ -231,7 +231,7 @@ function globonet_corresponding_node_user_reference_process_user_update($user_en
 }
 
 /**
- * This function handels the delete logic for a user.
+ * This function handles the delete logic for a user.
  *
  * @param $user_entity
  */
